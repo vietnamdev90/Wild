@@ -1606,8 +1606,16 @@ runs:
         fi
 
         
+        # Apply config.txt last so it can override built-in Kconfig choices.
+        KERNEL_CONFIG_FRAGMENT="$GITHUB_WORKSPACE/config.txt"
+        python3 "$GITHUB_WORKSPACE/tools/apply_kernel_config.py" apply \
+          --fragment "$KERNEL_CONFIG_FRAGMENT" --config "$OUT/.config"
+
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" olddefconfig
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" syncconfig
+        python3 "$GITHUB_WORKSPACE/tools/apply_kernel_config.py" verify \
+          --fragment "$KERNEL_CONFIG_FRAGMENT" --config "$OUT/.config"
+
         if ! grep -Fqx "CONFIG_LOCALVERSION=\"$CUSTOM_LOCALVERSION\"" "$OUT/.config"; then
           echo "::error::Kconfig lost requested CONFIG_LOCALVERSION=$CUSTOM_LOCALVERSION"
           grep '^CONFIG_LOCALVERSION=' "$OUT/.config" || true
