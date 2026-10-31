@@ -1565,6 +1565,10 @@ runs:
         echo "ccache pre-build status:"
         ccache -s | head -n 20
         echo "============================================"
+
+        DEFCONFIG="$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig"
+        scripts/config --file "$DEFCONFIG" --set-str LOCALVERSION "$CUSTOM_LOCALVERSION"
+        scripts/config --file "$DEFCONFIG" -d LOCALVERSION_AUTO
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" gki_defconfig
         
@@ -1603,6 +1607,12 @@ runs:
 
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" olddefconfig
+        make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" syncconfig
+        if ! grep -Fqx "CONFIG_LOCALVERSION=\"$CUSTOM_LOCALVERSION\"" "$OUT/.config"; then
+          echo "::error::Kconfig lost requested CONFIG_LOCALVERSION=$CUSTOM_LOCALVERSION"
+          grep '^CONFIG_LOCALVERSION=' "$OUT/.config" || true
+          exit 1
+        fi
 
         ACTUAL_KERNEL_RELEASE="$(make -s --no-print-directory O="$OUT" kernelrelease)"
         echo "Configured kernel release: $ACTUAL_KERNEL_RELEASE"
