@@ -1827,8 +1827,26 @@ runs:
         echo "Customize Kernel Branding"
         cd "$COMMON_KERNEL_FOLDER"
         mkdir -p out
-        CUSTOM_LOCALVERSION="-${ANDROID_VER}-${OP_UNAME}"
+        # OP_UNAME is a full uname -r string; CONFIG_LOCALVERSION only needs
+        # the suffix after the kernel's VERSION.PATCHLEVEL.SUBLEVEL.
+        if [ -n "${OP_UNAME:-}" ]; then
+          case "$OP_UNAME" in
+            "$TKERNEL_VER"|"$TKERNEL_VER"-*)
+              CUSTOM_LOCALVERSION="${OP_UNAME#"$TKERNEL_VER"}"
+              ;;
+            *)
+              echo "::error::Target uname '$OP_UNAME' does not start with kernel base '$TKERNEL_VER'"
+              exit 1
+              ;;
+          esac
+        else
+          CUSTOM_LOCALVERSION="-${ANDROID_VER}-OP-WILD"
+        fi
+
+        EXPECTED_KERNEL_RELEASE="${TKERNEL_VER}${CUSTOM_LOCALVERSION}"
         echo "CUSTOM_LOCALVERSION=$CUSTOM_LOCALVERSION" >> "$GITHUB_ENV"
+        echo "EXPECTED_KERNEL_RELEASE=$EXPECTED_KERNEL_RELEASE" >> "$GITHUB_ENV"
+        echo "Target kernel release: $EXPECTED_KERNEL_RELEASE"
 
     - name: Disable GPUEB
       shell: bash
@@ -1960,6 +1978,9 @@ runs:
         set +u
         source "$KERNEL_PLATFORM_FOLDER/build/kernel/_setup_env.sh" 2>/dev/null || true
         set -u
+        # Explicitly empty LOCALVERSION suppresses the SCM '+' suffix when
+        # CONFIG_LOCALVERSION_AUTO is disabled, without patching the source.
+        export LOCALVERSION=""
         
         echo '#!/bin/bash' > "$COMMON_KERNEL_FOLDER/ld-wrapper"
         echo 'ld.lld "$@" --thinlto-jobs=$(nproc --all)' >> "$COMMON_KERNEL_FOLDER/ld-wrapper"
@@ -2018,12 +2039,8 @@ runs:
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" gki_defconfig
         
-        LOCAL_LOCALVERSION="${CUSTOM_LOCALVERSION:--OP-WILD}"
-        if [ -n "${LOCAL_LOCALVERSION:-}" ]; then
-          scripts/config --file "$OUT/.config" --set-str LOCALVERSION "${LOCAL_LOCALVERSION}"
-          scripts/config --file "$OUT/.config" -d LOCALVERSION_AUTO || true
-          sed -i 's/scm_version="$(scm_version --short)"/scm_version=""/' scripts/setlocalversion
-        fi
+        scripts/config --file "$OUT/.config" --set-str LOCALVERSION "$CUSTOM_LOCALVERSION"
+        scripts/config --file "$OUT/.config" -d LOCALVERSION_AUTO
         
         if [ "${{ inputs.optimize_level }}" = "O3" ]; then
           scripts/config --file "$OUT/.config" -d CC_OPTIMIZE_FOR_PERFORMANCE -e CC_OPTIMIZE_FOR_PERFORMANCE_O3
@@ -2057,6 +2074,13 @@ runs:
 
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" olddefconfig
+
+        ACTUAL_KERNEL_RELEASE="$(make -s --no-print-directory O="$OUT" kernelrelease)"
+        echo "Configured kernel release: $ACTUAL_KERNEL_RELEASE"
+        if [ "$ACTUAL_KERNEL_RELEASE" != "$EXPECTED_KERNEL_RELEASE" ]; then
+          echo "::error::Kernel release mismatch: expected '$EXPECTED_KERNEL_RELEASE', got '$ACTUAL_KERNEL_RELEASE'"
+          exit 1
+        fi
         
         KCFLAGS="$KCFLAGS -Wno-error -pipe ${KCFLAGS_EXTRA}"
         KCPPFLAGS="$KCPPFLAGS -DCONFIG_OPTIMIZE_INLINING"
@@ -2251,6 +2275,10 @@ runs:
         
         KERNEL_UNAME=$(strings "$IMG" | grep -E 'Linux version.*#' | tail -n1)
         echo "Kernel Uname: $KERNEL_UNAME"
+        if [[ "$KERNEL_UNAME" != "Linux version $EXPECTED_KERNEL_RELEASE "* ]]; then
+          echo "::error::Built Image kernel release does not match '$EXPECTED_KERNEL_RELEASE'"
+          exit 1
+        fi
         echo "KERNEL_UNAME=$KERNEL_UNAME" >> "$GITHUB_ENV"
         
         printf 'warnings_count=%s\n' "$WARNINGS_COUNT" >> "$GITHUB_OUTPUT"
