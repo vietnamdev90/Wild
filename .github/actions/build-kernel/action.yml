@@ -1370,19 +1370,7 @@ runs:
         mkdir -p out
         # OP_UNAME is a full uname -r string; CONFIG_LOCALVERSION only needs
         # the suffix after the kernel's VERSION.PATCHLEVEL.SUBLEVEL.
-        if [ -n "${OP_UNAME:-}" ]; then
-          case "$OP_UNAME" in
-            "$TKERNEL_VER"|"$TKERNEL_VER"-*)
-              CUSTOM_LOCALVERSION="${OP_UNAME#"$TKERNEL_VER"}"
-              ;;
-            *)
-              echo "::error::Target uname '$OP_UNAME' does not start with kernel base '$TKERNEL_VER'"
-              exit 1
-              ;;
-          esac
-        else
-          CUSTOM_LOCALVERSION="-${ANDROID_VER}-OP-WILD"
-        fi
+          CUSTOM_LOCALVERSION="-${ANDROID_VER}-5-gb2a876903b49-ab14541642-4k"
 
         EXPECTED_KERNEL_RELEASE="${TKERNEL_VER}${CUSTOM_LOCALVERSION}"
         echo "CUSTOM_LOCALVERSION=$CUSTOM_LOCALVERSION" >> "$GITHUB_ENV"
